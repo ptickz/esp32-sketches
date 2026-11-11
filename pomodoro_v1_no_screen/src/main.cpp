@@ -1,21 +1,18 @@
 #include <Arduino.h>
 
-// ---------- Пины ----------
-constexpr uint8_t PIN_RGB_R = 16; // RX2, через резистор 220 Ом
-constexpr uint8_t PIN_RGB_G = 17; // TX2, через резистор 220 Ом
-constexpr uint8_t PIN_RGB_B = 21; // D21, через резистор 220 Ом
+constexpr uint8_t PIN_RED_LED = 16;
+constexpr uint8_t PIN_GREEN_LED = 17;
+constexpr uint8_t PIN_YELLOW_LED = 21;
 constexpr uint8_t PIN_BTN_START = 18;
 constexpr uint8_t PIN_BTN_RESET = 19;
 constexpr uint8_t PIN_BUZZER = 23;
 constexpr uint8_t PIN_POT = 4;
 
-// ---------- Настройки ----------
-constexpr bool COMMON_ANODE = false; // true, если у RGB общий плюс
-constexpr bool DEBUG = false;        // в отладке «минута» = 1 секунда
+constexpr bool DEBUG = false;
 constexpr unsigned long MINUTE_MS = DEBUG ? 1000UL : 60000UL;
-constexpr unsigned long BREAK_MS = 5 * MINUTE_MS;       // короткий перерыв
-constexpr unsigned long LONG_BREAK_MS = 15 * MINUTE_MS; // длинный перерыв
-constexpr int POMODOROS_BEFORE_LONG = 4;                // длинный после каждого 4-го
+constexpr unsigned long BREAK_MS = 5 * MINUTE_MS;
+constexpr unsigned long LONG_BREAK_MS = 15 * MINUTE_MS;
+constexpr int POMODOROS_BEFORE_LONG = 4;
 constexpr unsigned long BLINK_MS = 1000;
 constexpr int POT_DEADBAND = 100;
 
@@ -42,7 +39,6 @@ unsigned long pausedElapsed = 0;
 int lastPot = 0;
 int completed = 0;
 
-// ---------- Кнопки с антидребезгом ----------
 struct Button
 {
   uint8_t pin;
@@ -53,7 +49,6 @@ struct Button
 Button btnStart{PIN_BTN_START, false, false, 0};
 Button btnReset{PIN_BTN_RESET, false, false, 0};
 
-// true только в момент нажатия
 bool justPressed(Button &b, unsigned long now)
 {
   bool raw = digitalRead(b.pin) == LOW; // кнопка на GND
@@ -70,7 +65,6 @@ bool justPressed(Button &b, unsigned long now)
   return false;
 }
 
-// ---------- Пищалка без delay() ----------
 struct Beeper
 {
   uint8_t left;
@@ -88,9 +82,13 @@ void beepPattern(uint8_t count, uint16_t onMs)
 void updateBeeper(unsigned long now)
 {
   if (beeper.left == 0 && !beeper.on)
+  {
     return;
+  }
   if (now < beeper.next)
+  {
     return;
+  }
   if (beeper.on)
   {
     digitalWrite(PIN_BUZZER, LOW);
@@ -106,7 +104,6 @@ void updateBeeper(unsigned long now)
   }
 }
 
-// ---------- Вспомогательное ----------
 const char *stateName(State s)
 {
   switch (s)
@@ -129,13 +126,16 @@ void setState(State next)
   state = next;
 }
 
-// ---------- Потенциометр ----------
 Length lengthFromRaw(int raw)
 {
   if (raw < 1300)
+  {
     return Length::M20;
+  }
   if (raw <= 2600)
+  {
     return Length::M25;
+  }
   return Length::M30;
 }
 
@@ -143,62 +143,50 @@ void readPot()
 {
   int raw = analogRead(PIN_POT);
   if (abs(raw - lastPot) <= POT_DEADBAND)
-    return; // игнорируем дрожание
+  {
+    return;
+  }
   lastPot = raw;
   if (state == State::Idle)
-  { // меняем только без таймера
+  {
     chosen = lengthFromRaw(raw);
     Serial.printf("Длина: %u мин\n", (unsigned)chosen);
   }
 }
 
-// ---------- RGB ----------
-void setRGB(uint8_t r, uint8_t g, uint8_t b)
+void setLED(bool red, bool yellow, bool green)
 {
-  if (COMMON_ANODE)
-  {
-    r = 255 - r;
-    g = 255 - g;
-    b = 255 - b;
-  }
-  analogWrite(PIN_RGB_R, r);
-  analogWrite(PIN_RGB_G, g);
-  analogWrite(PIN_RGB_B, b);
+  digitalWrite(PIN_RED_LED, red ? HIGH : LOW);
+  digitalWrite(PIN_YELLOW_LED, yellow ? HIGH : LOW);
+  digitalWrite(PIN_GREEN_LED, green ? HIGH : LOW);
 }
 
-float progress(unsigned long now)
-{
-  if (phaseTotal == 0)
-    return 0;
-  unsigned long e = now - phaseStart;
-  if (e >= phaseTotal)
-    return 1.0f;
-  return (float)e / phaseTotal;
-}
-
-void updateRGB(unsigned long now)
+void updateLED(unsigned long now)
 {
   switch (state)
   {
   case State::Idle:
-    setRGB(0, 0, 255); // синий
+    setLED(false, true, false);
     break;
   case State::Work:
-    setRGB(255, 0, 0); // красный
+    setLED(true, false, false);
     break;
   case State::Break:
-    setRGB(0, 255, 0); // зелёный
+    setLED(false, false, true);
     break;
   case State::Paused:
     if ((now / BLINK_MS) % 2 == 0)
-      setRGB(255, 255, 0); // жёлтый 1 с
+    {
+      setLED(true, true, true);
+    }
     else
-      setRGB(0, 0, 0); // выкл 1 с
+    {
+      setLED(false, false, false);
+    }
     break;
   }
 }
 
-// ---------- Переходы фаз ----------
 void startWork(unsigned long now)
 {
   phaseStart = now;
@@ -229,10 +217,10 @@ void onStartPressed(unsigned long now)
     pausedFrom = state;
     pausedElapsed = now - phaseStart;
     setState(State::Paused);
-    beepPattern(1, 600); // длинный писк
+    beepPattern(1, 600);
     break;
   case State::Paused:
-    phaseStart = now - pausedElapsed; // продолжаем с той же отметки
+    phaseStart = now - pausedElapsed;
     setState(pausedFrom);
     beepPattern(1, 100);
     break;
@@ -253,9 +241,13 @@ void onResetPressed()
 void checkPhaseEnd(unsigned long now)
 {
   if (state != State::Work && state != State::Break)
+  {
     return;
+  }
   if (now - phaseStart < phaseTotal)
+  {
     return;
+  }
   if (state == State::Work)
   {
     completed++;
@@ -271,7 +263,9 @@ void printStatus(unsigned long now)
 {
   static unsigned long lastPrint = 0;
   if (!DEBUG || now - lastPrint < 1000)
+  {
     return;
+  }
   lastPrint = now;
   if (state == State::Idle)
   {
@@ -283,13 +277,16 @@ void printStatus(unsigned long now)
   Serial.printf("%s, осталось %lu с, помидоров: %d\n", stateName(state), left, completed);
 }
 
-// ---------- Главный цикл ----------
 void setup()
 {
   Serial.begin(115200);
-  pinMode(PIN_RGB_R, OUTPUT);
-  pinMode(PIN_RGB_G, OUTPUT);
-  pinMode(PIN_RGB_B, OUTPUT);
+
+  pinMode(PIN_RED_LED, OUTPUT);
+  digitalWrite(PIN_RED_LED, LOW);
+  pinMode(PIN_GREEN_LED, OUTPUT);
+  digitalWrite(PIN_GREEN_LED, LOW);
+  pinMode(PIN_YELLOW_LED, OUTPUT);
+  digitalWrite(PIN_YELLOW_LED, LOW);
   pinMode(PIN_BUZZER, OUTPUT);
   digitalWrite(PIN_BUZZER, LOW);
   pinMode(PIN_BTN_START, INPUT_PULLUP);
@@ -306,11 +303,15 @@ void loop()
 
   readPot();
   if (justPressed(btnStart, now))
+  {
     onStartPressed(now);
+  }
   if (justPressed(btnReset, now))
+  {
     onResetPressed();
+  }
   checkPhaseEnd(now);
   updateBeeper(now);
-  updateRGB(now);
+  updateLED(now);
   printStatus(now);
 }
